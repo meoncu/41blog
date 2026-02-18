@@ -1,0 +1,135 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ═══════════════════════════════════════════════════════════
+    // YARDIMCI FONKSİYONLAR
+    // ═══════════════════════════════════════════════════════════
+
+    // Oturum açmış mı?
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // Admin mi? (sadece meoncu@gmail.com)
+    function isAdmin() {
+      return isSignedIn() && request.auth.token.email == 'meoncu@gmail.com';
+    }
+
+    // Site ayarlarını oku
+    function siteConfig() {
+      return get(/databases/$(database)/documents/config/site).data;
+    }
+
+    // Site modu: 'open' = herkese açık, 'restricted' = sadece izinliler
+    function siteIsOpen() {
+      return !exists(/databases/$(database)/documents/config/site) ||
+             siteConfig().mode == 'open';
+    }
+
+    // Kullanıcı Firestore'da kayıtlı ve 'allowed' rolünde mi?
+    function isAllowedUser() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'allowed';
+    }
+
+    // Siteye erişim hakkı var mı?
+    // - Admin her zaman erişebilir
+    // - Site 'open' modundaysa herkes erişebilir
+    // - Site 'restricted' modundaysa sadece 'allowed' kullanıcılar
+    function canAccessSite() {
+      return isAdmin() || siteIsOpen() || isAllowedUser();
+    }
+
+    // Post yazma/düzenleme hakkı var mı?
+    function canWrite() {
+      return isAdmin() || (
+        isAllowedUser() &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.canEdit == true
+      );
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // POSTS
+    // ═══════════════════════════════════════════════════════════
+
+    match /posts/{postId} {
+
+      // Okuma: siteye erişim hakkı olan + post görünürlüğüne göre
+      allow read: if canAccessSite() && (
+        resource.data.visibility == 'public' ||
+        isAdmin() ||
+        (isSignedIn() && request.auth.token.email in resource.data.allowedUsers)
+      );
+
+      // Oluşturma: admin veya canEdit yetkili kullanıcı
+      allow create: if canWrite() &&
+        request.resource.data.keys().hasAll(['title', 'content', 'visibility', 'createdBy', 'createdAt']) &&
+        request.resource.data.title is string &&
+        request.resource.data.title.size() > 0 &&
+        request.resource.data.title.size() <= 200 &&
+        request.resource.data.visibility in ['public', 'private'] &&
+        request.resource.data.createdBy == request.auth.uid &&
+        request.resource.data.likesCount == 0 &&
+        request.resource.data.likedBy is list;
+
+      // Güncelleme: tam düzenleme (canWrite) VEYA sadece beğeni (herkes)
+      allow update: if (
+        canWrite() &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy', 'createdAt'])
+      ) || (
+        canAccessSite() && isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likedBy', 'likesCount'])
+      );
+
+      // Silme: sadece admin
+      allow delete: if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // USERS
+    // ═══════════════════════════════════════════════════════════
+
+    match /users/{userId} {
+      // Kendi profilini okuyabilir, admin hepsini okuyabilir
+      allow read: if isSignedIn() && (request.auth.uid == userId || isAdmin());
+
+      // İlk girişte kendi belgesini oluşturabilir
+      allow create: if isSignedIn() &&
+        request.auth.uid == userId &&
+        request.resource.data.uid == request.auth.uid;
+
+      // Admin her şeyi güncelleyebilir; kullanıcı sadece kendi hassas olmayan alanlarını
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        request.auth.uid == userId &&
+        !request.resource.data.diff(resource.data).affectedKeys()
+          .hasAny(['role', 'canEdit', 'approvedAt', 'approvedBy'])
+      );
+
+      // Sadece admin silebilir
+      allow delete: if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // CONFIG (site ayarları, admin listesi vb.)
+    // ═══════════════════════════════════════════════════════════
+
+    match /config/{document} {
+      // Herkes okuyabilir (site modu kontrolü için gerekli)
+      allow read: if true;
+      // Sadece admin yazabilir
+      allow write: if isAdmin();
+    }
+
+    // ═══════════════════════════════════════════════════════════
+    // Diğer her şey yasak
+    // ═══════════════════════════════════════════════════════════
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
