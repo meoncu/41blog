@@ -4,26 +4,8 @@
  * Post Server Actions
  * All mutations go through here. Firebase Admin SDK enforces server-side auth.
  */
-import {
-    collection,
-    doc,
-    addDoc,
-    updateDoc,
-    deleteDoc,
-    getDoc,
-    getDocs,
-    query,
-    where,
-    orderBy,
-    limit,
-    startAfter,
-    arrayUnion,
-    arrayRemove,
-    increment,
-    serverTimestamp,
-    DocumentSnapshot,
-} from 'firebase/firestore';
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
+import { FieldValue } from 'firebase-admin/firestore';
 import { Post, PostVisibility, GpsLocation, PaginatedResult } from '@/types';
 import { isAdmin } from '@/lib/permissions';
 import { cookies } from 'next/headers';
@@ -74,8 +56,8 @@ export async function createPost(
         content: data.content.trim(),
         images: data.images,
         location: data.location ?? null,
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
         createdBy: decoded.uid,
         createdByEmail: email,
         createdByName: decoded.name ?? email,
@@ -114,7 +96,7 @@ export async function updatePost(
 
     await adminDb.collection('posts').doc(postId).update({
         ...data,
-        updatedAt: serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
     });
 }
 
