@@ -31,6 +31,11 @@ export const metadata: Metadata = {
     title: '41Blog – Share Your World',
     description: 'A private, mobile-first blog.',
   },
+  twitter: {
+    card: 'summary_large_image',
+    title: '41Blog – Share Your World',
+    description: 'A private, mobile-first blog.',
+  },
 };
 
 export const viewport: Viewport = {
