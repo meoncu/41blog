@@ -6,7 +6,8 @@ import Link from 'next/link';
 import { Post } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { toggleLike } from '@/app/actions/posts';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
+import { tr } from 'date-fns/locale';
 import {
     Heart,
     Share2,
@@ -81,7 +82,10 @@ export function PostCard({ post, onDeleted }: PostCardProps) {
     }, [user, post.id, onDeleted]);
 
     const createdAt = post.createdAt
-        ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })
+        ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true, locale: tr })
+        : '';
+    const createdDate = post.createdAt
+        ? format(new Date(post.createdAt), 'd MMM yyyy', { locale: tr })
         : '';
 
     return (
@@ -139,6 +143,8 @@ export function PostCard({ post, onDeleted }: PostCardProps) {
                         </Link>
                         <div className="flex items-center gap-2 mt-1 text-xs text-text-muted">
                             <span>{post.createdByName || post.createdByEmail}</span>
+                            <span>·</span>
+                            <span>{createdDate}</span>
                             <span>·</span>
                             <span>{createdAt}</span>
                             {post.location && (

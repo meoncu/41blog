@@ -214,7 +214,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
 
         useImperativeHandle(ref, () => ({
             upload: uploadAll,
-            hasPendingFiles: files.some((f) => f.status !== 'done' && f.status !== 'error') || files.length === 0 ? false : files.some(f => f.status !== 'done'),
+            hasPendingFiles: files.length > 0 && files.some((f) => f.status !== 'done'),
         }));
 
         return (
@@ -240,7 +240,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
+                    accept="image/jpeg,image/png,image/webp,image/heic"
                     multiple
                     className="hidden"
                     onChange={(e) => e.target.files && addFiles(e.target.files)}
@@ -248,7 +248,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                 <input
                     ref={cameraInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp"
+                    accept="image/*"
                     capture="environment"
                     className="hidden"
                     onChange={(e) => e.target.files && addFiles(e.target.files)}

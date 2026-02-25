@@ -5,7 +5,8 @@ import Image from 'next/image';
 import { Post } from '@/types';
 import { useAuth } from '@/contexts/AuthContext';
 import { toggleLike } from '@/app/actions/posts';
-import { formatDistanceToNow } from 'date-fns';
+import { formatDistanceToNow, format } from 'date-fns';
+import { tr } from 'date-fns/locale';
 import {
     Heart,
     Share2,
@@ -56,7 +57,10 @@ export function PostDetailClient({ post }: PostDetailClientProps) {
     }, [post]);
 
     const createdAt = post.createdAt
-        ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true })
+        ? formatDistanceToNow(new Date(post.createdAt), { addSuffix: true, locale: tr })
+        : '';
+    const createdDate = post.createdAt
+        ? format(new Date(post.createdAt), 'd MMMM yyyy, HH:mm', { locale: tr })
         : '';
 
     return (
@@ -126,6 +130,8 @@ export function PostDetailClient({ post }: PostDetailClientProps) {
                     </span>
                     <span>·</span>
                     <span>{post.createdByName || post.createdByEmail}</span>
+                    <span>·</span>
+                    <span>{createdDate}</span>
                     <span>·</span>
                     <span>{createdAt}</span>
                 </div>

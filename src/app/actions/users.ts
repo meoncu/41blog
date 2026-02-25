@@ -4,7 +4,7 @@
  * User Management Server Actions (Admin only)
  */
 import { adminAuth, adminDb } from '@/lib/firebase/admin';
-import { AppUser } from '@/types';
+import { AppUser, UserRole } from '@/types';
 
 const ADMIN_EMAILS = (process.env.NEXT_PUBLIC_ADMIN_EMAILS ?? '')
     .split(',')
@@ -66,6 +66,53 @@ export async function toggleEditPermission(
 ): Promise<void> {
     await assertAdmin(idToken);
     await adminDb.collection('users').doc(targetUid).update({ canEdit });
+}
+
+// ─── Whitelist (Pre-approval) ────────────────────────────────────────────────
+export interface WhitelistedUser {
+    id: string;
+    email: string;
+    role: UserRole;
+    canEdit: boolean;
+    createdAt: string;
+}
+
+export async function addToWhitelist(
+    idToken: string,
+    email: string,
+    role: UserRole = 'allowed',
+    canEdit: boolean = false
+): Promise<void> {
+    await assertAdmin(idToken);
+    const lowercaseEmail = email.trim().toLowerCase();
+
+    // Check if already in whitelist
+    const existing = await adminDb
+        .collection('whitelist')
+        .where('email', '==', lowercaseEmail)
+        .get();
+
+    if (!existing.empty) {
+        throw new Error('Email already in whitelist');
+    }
+
+    await adminDb.collection('whitelist').add({
+        email: lowercaseEmail,
+        role,
+        canEdit,
+        createdAt: new Date().toISOString(),
+    });
+}
+
+export async function removeFromWhitelist(idToken: string, id: string): Promise<void> {
+    await assertAdmin(idToken);
+    await adminDb.collection('whitelist').doc(id).delete();
+}
+
+export async function getWhitelist(idToken: string): Promise<WhitelistedUser[]> {
+    await assertAdmin(idToken);
+    const snap = await adminDb.collection('whitelist').orderBy('createdAt', 'desc').get();
+    return snap.docs.map((d) => ({ id: d.id, ...d.data() } as WhitelistedUser));
 }
 
 // ─── Delete user ──────────────────────────────────────────────────────────────

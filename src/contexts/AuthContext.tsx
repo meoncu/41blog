@@ -50,14 +50,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const resolvedRole: UserRole = isAdmin(email) ? 'admin' : data.role;
             setAppUser({ ...data, role: resolvedRole });
         } else {
+            // Check whitelist for pre-approval
+            let initialRole = role;
+            let initialCanEdit = role === 'admin';
+
+            try {
+                // We use client-side SDK check here (faster)
+                // Note: whitelist collection should have proper rules
+                const { collection, query, where, getDocs, limit } = await import('firebase/firestore');
+                const q = query(collection(db, 'whitelist'), where('email', '==', email.toLowerCase()), limit(1));
+                const whitelistSnap = await getDocs(q);
+
+                if (!whitelistSnap.empty) {
+                    const whiteData = whitelistSnap.docs[0].data();
+                    initialRole = whiteData.role || 'allowed';
+                    initialCanEdit = whiteData.canEdit || false;
+                }
+            } catch (err) {
+                console.error('Whitelist check failed:', err);
+            }
+
             // First login – create user document
             const newUser: Omit<AppUser, 'approvedAt' | 'approvedBy'> = {
                 uid: firebaseUser.uid,
                 email,
                 displayName: firebaseUser.displayName,
                 photoURL: firebaseUser.photoURL,
-                role,
-                canEdit: role === 'admin',
+                role: initialRole,
+                canEdit: initialCanEdit,
                 createdAt: new Date().toISOString(),
             };
             await setDoc(userRef, { ...newUser, createdAt: serverTimestamp() });
