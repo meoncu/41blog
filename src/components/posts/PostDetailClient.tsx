@@ -16,6 +16,7 @@ import {
     ArrowLeft,
     ChevronLeft,
     ChevronRight,
+    X,
 } from 'lucide-react';
 import Link from 'next/link';
 
@@ -28,6 +29,18 @@ export function PostDetailClient({ post }: PostDetailClientProps) {
     const [liked, setLiked] = useState(user ? post.likedBy.includes(user.uid) : false);
     const [likesCount, setLikesCount] = useState(post.likesCount);
     const [currentImage, setCurrentImage] = useState(0);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    const openFullscreen = (index: number) => {
+        setCurrentImage(index);
+        setIsFullscreen(true);
+        document.body.style.overflow = 'hidden';
+    };
+
+    const closeFullscreen = () => {
+        setIsFullscreen(false);
+        document.body.style.overflow = 'auto';
+    };
 
     const handleLike = useCallback(async () => {
         if (!user) return;
@@ -78,45 +91,117 @@ export function PostDetailClient({ post }: PostDetailClientProps) {
 
             {/* Image gallery */}
             {post.images.length > 0 && (
-                <div className="relative aspect-[4/3] bg-surface-2">
+                <div
+                    className="relative aspect-[4/3] bg-black overflow-hidden flex items-center justify-center cursor-zoom-in"
+                    onClick={() => openFullscreen(currentImage)}
+                >
                     <Image
                         src={post.images[currentImage]}
                         alt={post.title}
                         fill
-                        className="object-cover"
+                        className="object-contain"
                         sizes="(max-width: 672px) 100vw, 672px"
                         priority
                     />
                     {post.images.length > 1 && (
                         <>
                             <button
-                                onClick={() => setCurrentImage((i) => Math.max(0, i - 1))}
-                                disabled={currentImage === 0}
-                                className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 flex items-center justify-center disabled:opacity-30"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentImage((i) => (i === 0 ? post.images.length - 1 : i - 1));
+                                }}
+                                className="absolute left-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 text-white hover:bg-black/60 flex items-center justify-center transition-all"
                             >
-                                <ChevronLeft size={20} className="text-white" />
+                                <ChevronLeft size={20} />
                             </button>
                             <button
-                                onClick={() =>
-                                    setCurrentImage((i) => Math.min(post.images.length - 1, i + 1))
-                                }
-                                disabled={currentImage === post.images.length - 1}
-                                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/50 flex items-center justify-center disabled:opacity-30"
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    setCurrentImage((i) => (i === post.images.length - 1 ? 0 : i + 1));
+                                }}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 w-9 h-9 rounded-full bg-black/40 text-white hover:bg-black/60 flex items-center justify-center transition-all"
                             >
-                                <ChevronRight size={20} className="text-white" />
+                                <ChevronRight size={20} />
                             </button>
-                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
                                 {post.images.map((_, i) => (
                                     <button
                                         key={i}
-                                        onClick={() => setCurrentImage(i)}
-                                        className={`h-1.5 rounded-full transition-all ${i === currentImage ? 'w-6 bg-white' : 'w-1.5 bg-white/50'
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCurrentImage(i);
+                                        }}
+                                        className={`h-1.5 rounded-full transition-all pointer-events-auto ${i === currentImage ? 'w-6 bg-white' : 'w-1.5 bg-white/50'
                                             }`}
                                     />
                                 ))}
                             </div>
                         </>
                     )}
+                </div>
+            )}
+
+            {/* Fullscreen Modal */}
+            {isFullscreen && (
+                <div
+                    className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center animate-fade-in touch-none"
+                    onClick={closeFullscreen}
+                >
+                    <button
+                        className="absolute top-6 right-6 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-[110]"
+                        onClick={closeFullscreen}
+                    >
+                        <X size={24} />
+                    </button>
+
+                    <div className="relative w-full h-full flex items-center justify-center p-4">
+                        <div className="relative w-full h-full flex items-center justify-center">
+                            <Image
+                                src={post.images[currentImage]}
+                                alt={post.title}
+                                fill
+                                className="object-contain"
+                                priority
+                            />
+                        </div>
+
+                        {post.images.length > 1 && (
+                            <>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImage((prev) => (prev === 0 ? post.images.length - 1 : prev - 1));
+                                    }}
+                                    className="absolute left-4 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+                                >
+                                    <ChevronLeft size={32} />
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImage((prev) => (prev === post.images.length - 1 ? 0 : prev + 1));
+                                    }}
+                                    className="absolute right-4 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+                                >
+                                    <ChevronRight size={32} />
+                                </button>
+                            </>
+                        )}
+
+                        <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-2">
+                            {post.images.map((_, i) => (
+                                <button
+                                    key={i}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImage(i);
+                                    }}
+                                    className={`w-2 h-2 rounded-full transition-all ${i === currentImage ? 'bg-white w-6' : 'bg-white/30'
+                                        }`}
+                                />
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
 

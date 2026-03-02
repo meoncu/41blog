@@ -17,6 +17,9 @@ import {
     MoreHorizontal,
     Trash2,
     Edit,
+    ChevronLeft,
+    ChevronRight,
+    X,
 } from 'lucide-react';
 import { deletePost } from '@/app/actions/posts';
 
@@ -35,6 +38,18 @@ export function PostCard({ post, onDeleted }: PostCardProps) {
     const [menuOpen, setMenuOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
     const [currentImageIndex, setCurrentImageIndex] = useState(0);
+    const [isFullscreen, setIsFullscreen] = useState(false);
+
+    const openFullscreen = (index: number) => {
+        setCurrentImageIndex(index);
+        setIsFullscreen(true);
+        document.body.style.overflow = 'hidden';
+    };
+
+    const closeFullscreen = () => {
+        setIsFullscreen(false);
+        document.body.style.overflow = 'auto';
+    };
 
     const handleLike = useCallback(async () => {
         if (!user) return;
@@ -89,44 +104,133 @@ export function PostCard({ post, onDeleted }: PostCardProps) {
         : '';
 
     return (
-        <article className="glass rounded-2xl overflow-hidden animate-fade-up">
+        <article className="glass rounded-2xl overflow-hidden animate-fade-up group">
             {/* Images carousel */}
             {post.images.length > 0 && (
-                <div className="relative aspect-[4/3] bg-surface-2">
+                <div
+                    className="relative aspect-[4/3] bg-black/40 group/carousel cursor-zoom-in flex items-center justify-center"
+                    onClick={() => openFullscreen(currentImageIndex)}
+                >
                     <Image
                         src={post.images[currentImageIndex]}
                         alt={post.title}
                         fill
-                        className="object-cover"
+                        className="object-contain"
                         sizes="(max-width: 672px) 100vw, 672px"
                         priority={false}
                     />
+
                     {post.images.length > 1 && (
                         <>
-                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5">
+                            {/* Navigation Arrows */}
+                            <div className="absolute inset-x-2 top-1/2 -translate-y-1/2 flex justify-between pointer-events-none opacity-0 group-hover/carousel:opacity-100 transition-opacity">
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImageIndex((prev) => (prev === 0 ? post.images.length - 1 : prev - 1));
+                                    }}
+                                    className="p-1.5 rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-sm pointer-events-auto transition-all"
+                                >
+                                    <ChevronLeft size={20} />
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImageIndex((prev) => (prev === post.images.length - 1 ? 0 : prev + 1));
+                                    }}
+                                    className="p-1.5 rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-sm pointer-events-auto transition-all"
+                                >
+                                    <ChevronRight size={20} />
+                                </button>
+                            </div>
+
+                            {/* Indicators */}
+                            <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-1.5 pointer-events-none">
                                 {post.images.map((_, i) => (
                                     <button
                                         key={i}
-                                        onClick={() => setCurrentImageIndex(i)}
-                                        className={`w-1.5 h-1.5 rounded-full transition-all ${i === currentImageIndex
-                                                ? 'bg-white w-4'
-                                                : 'bg-white/50'
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            setCurrentImageIndex(i);
+                                        }}
+                                        className={`w-1.5 h-1.5 rounded-full transition-all pointer-events-auto ${i === currentImageIndex ? 'bg-white w-4' : 'bg-white/50'
                                             }`}
                                     />
                                 ))}
                             </div>
                         </>
                     )}
+
                     {/* Visibility badge */}
-                    <div className="absolute top-3 right-3">
-                        <span className="flex items-center gap-1 px-2 py-1 rounded-full bg-black/50 text-white text-xs">
-                            {post.visibility === 'public' ? (
-                                <Globe size={11} />
-                            ) : (
-                                <Lock size={11} />
-                            )}
+                    <div className="absolute top-3 right-3 pointer-events-none">
+                        <span className="flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/60 text-white text-[10px] font-semibold backdrop-blur-md border border-white/10 uppercase tracking-wider">
+                            {post.visibility === 'public' ? <Globe size={11} /> : <Lock size={11} />}
                             {post.visibility}
                         </span>
+                    </div>
+                </div>
+            )}
+
+            {/* Fullscreen Video/Image Modal */}
+            {isFullscreen && (
+                <div
+                    className="fixed inset-0 z-[100] bg-black/95 flex items-center justify-center animate-fade-in touch-none"
+                    onClick={closeFullscreen}
+                >
+                    <button
+                        className="absolute top-6 right-6 p-2 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors z-[110]"
+                        onClick={closeFullscreen}
+                    >
+                        <X size={24} />
+                    </button>
+
+                    <div className="relative w-full h-full flex items-center justify-center p-4">
+                        <div className="relative w-full h-full flex items-center justify-center">
+                            <Image
+                                src={post.images[currentImageIndex]}
+                                alt={post.title}
+                                fill
+                                className="object-contain"
+                                priority
+                            />
+                        </div>
+
+                        {post.images.length > 1 && (
+                            <>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImageIndex((prev) => (prev === 0 ? post.images.length - 1 : prev - 1));
+                                    }}
+                                    className="absolute left-4 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+                                >
+                                    <ChevronLeft size={32} />
+                                </button>
+                                <button
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImageIndex((prev) => (prev === post.images.length - 1 ? 0 : prev + 1));
+                                    }}
+                                    className="absolute right-4 p-3 rounded-full bg-white/10 text-white hover:bg-white/20 transition-colors"
+                                >
+                                    <ChevronRight size={32} />
+                                </button>
+                            </>
+                        )}
+
+                        <div className="absolute bottom-10 left-0 right-0 flex justify-center gap-2">
+                            {post.images.map((_, i) => (
+                                <button
+                                    key={i}
+                                    onClick={(e) => {
+                                        e.stopPropagation();
+                                        setCurrentImageIndex(i);
+                                    }}
+                                    className={`w-2 h-2 rounded-full transition-all ${i === currentImageIndex ? 'bg-white w-6' : 'bg-white/30'
+                                        }`}
+                                />
+                            ))}
+                        </div>
                     </div>
                 </div>
             )}

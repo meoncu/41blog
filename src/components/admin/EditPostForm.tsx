@@ -4,8 +4,11 @@ import { useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
 import { updatePost } from '@/app/actions/posts';
-import { Post, PostVisibility } from '@/types';
-import { Globe, Lock, Loader2, CheckCircle } from 'lucide-react';
+import { ImageUploader, ImageUploaderRef } from '@/components/upload/ImageUploader';
+import { Post, PostVisibility, GpsLocation } from '@/types';
+import { Globe, Lock, Loader2, CheckCircle, X, Trash2 } from 'lucide-react';
+import Image from 'next/image';
+import { useRef } from 'react';
 
 interface EditPostFormProps {
     post: Post;
@@ -19,9 +22,24 @@ export function EditPostForm({ post }: EditPostFormProps) {
     const [content, setContent] = useState(post.content);
     const [visibility, setVisibility] = useState<PostVisibility>(post.visibility);
     const [allowedUsers, setAllowedUsers] = useState(post.allowedUsers.join(', '));
+    const [images, setImages] = useState<string[]>(post.images || []);
+    const [location, setLocation] = useState<GpsLocation | undefined>(post.location);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
+    const uploaderRef = useRef<ImageUploaderRef>(null);
+
+    const handleRemoveImage = (index: number) => {
+        setImages(prev => prev.filter((_, i) => i !== index));
+    };
+
+    const handleImagesUploaded = useCallback(
+        (newImages: any[], loc?: GpsLocation) => {
+            setImages(prev => [...prev, ...newImages.map(img => img.publicUrl)]);
+            if (loc) setLocation(loc);
+        },
+        []
+    );
 
     const handleSubmit = useCallback(
         async (e: React.FormEvent) => {
@@ -38,11 +56,22 @@ export function EditPostForm({ post }: EditPostFormProps) {
                     .map((e) => e.trim().toLowerCase())
                     .filter(Boolean);
 
+                // Handle pending uploads if any
+                let finalImages = [...images];
+                if (uploaderRef.current?.hasPendingFiles) {
+                    const results = await uploaderRef.current.upload();
+                    if (results && results.length > 0) {
+                        finalImages = [...finalImages, ...results.map(r => r.publicUrl)];
+                    }
+                }
+
                 await updatePost(idToken, post.id, {
                     title: title.trim(),
                     content: content.trim(),
                     visibility,
                     allowedUsers: emails,
+                    images: finalImages,
+                    location,
                 });
 
                 setSuccess(true);
@@ -52,7 +81,7 @@ export function EditPostForm({ post }: EditPostFormProps) {
                 setSubmitting(false);
             }
         },
-        [user, canEdit, title, content, visibility, allowedUsers, post.id, router]
+        [user, canEdit, title, content, visibility, allowedUsers, post.id, router, images, location]
     );
 
     if (!canEdit) {
@@ -100,6 +129,39 @@ export function EditPostForm({ post }: EditPostFormProps) {
             </div>
 
             <div>
+                <label className="block text-sm font-medium text-text-secondary mb-3">
+                    Images
+                </label>
+
+                {/* Existing Images */}
+                <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-4">
+                    {images.map((url, idx) => (
+                        <div key={idx} className="relative aspect-square rounded-xl overflow-hidden group border border-surface-4">
+                            <Image
+                                src={url}
+                                alt={`Post image ${idx + 1}`}
+                                fill
+                                className="object-cover"
+                            />
+                            <button
+                                type="button"
+                                onClick={() => handleRemoveImage(idx)}
+                                className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent-like"
+                            >
+                                <X size={14} />
+                            </button>
+                        </div>
+                    ))}
+                </div>
+
+                {/* Add More Images */}
+                <div className="bg-surface-2/50 p-4 rounded-2xl border border-surface-4 border-dashed">
+                    <p className="text-xs text-text-muted mb-3 font-medium uppercase tracking-wider">Add More</p>
+                    <ImageUploader ref={uploaderRef} onUploaded={handleImagesUploaded} />
+                </div>
+            </div>
+
+            <div>
                 <label className="block text-sm font-medium text-text-secondary mb-1.5">
                     Visibility
                 </label>
@@ -110,8 +172,8 @@ export function EditPostForm({ post }: EditPostFormProps) {
                             type="button"
                             onClick={() => setVisibility(v)}
                             className={`flex items-center justify-center gap-2 py-3 rounded-xl border text-sm font-medium transition-colors ${visibility === v
-                                    ? 'border-brand-500 bg-brand-600/20 text-brand-300'
-                                    : 'border-surface-4 bg-surface-2 text-text-secondary'
+                                ? 'border-brand-500 bg-brand-600/20 text-brand-300'
+                                : 'border-surface-4 bg-surface-2 text-text-secondary'
                                 }`}
                         >
                             {v === 'public' ? <Globe size={16} /> : <Lock size={16} />}
