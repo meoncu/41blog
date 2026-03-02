@@ -9,12 +9,7 @@ export const metadata: Metadata = {
 
 export default function HomePage() {
   return (
-    <div className="max-w-2xl mx-auto px-4 py-6">
-      {/* Hero */}
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold gradient-text mb-1">Your Feed</h1>
-        <p className="text-sm text-text-muted">Latest moments from the community</p>
-      </div>
+    <div className="max-w-2xl mx-auto px-4 py-6 whitespace-pre-wrap">
 
       {/* Search */}
       <div className="mb-6">

@@ -141,14 +141,19 @@ export function EditPostForm({ post }: EditPostFormProps) {
                                 src={url}
                                 alt={`Post image ${idx + 1}`}
                                 fill
-                                className="object-cover"
+                                className="object-contain bg-black/20"
                             />
                             <button
                                 type="button"
-                                onClick={() => handleRemoveImage(idx)}
-                                className="absolute top-1 right-1 p-1 rounded-full bg-black/60 text-white opacity-0 group-hover:opacity-100 transition-opacity hover:bg-accent-like"
+                                onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    handleRemoveImage(idx);
+                                }}
+                                className="absolute top-1.5 right-1.5 p-1.5 rounded-full bg-black/70 text-white hover:bg-accent-like transition-colors z-10 shadow-lg"
+                                title="Remove image"
                             >
-                                <X size={14} />
+                                <X size={16} />
                             </button>
                         </div>
                     ))}
