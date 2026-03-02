@@ -92,14 +92,14 @@ export function PostDetailClient({ post }: PostDetailClientProps) {
             {/* Image gallery */}
             {post.images.length > 0 && (
                 <div
-                    className="relative aspect-[4/3] bg-black overflow-hidden flex items-center justify-center cursor-zoom-in"
+                    className="relative aspect-[4/3] bg-surface-2 overflow-hidden cursor-zoom-in"
                     onClick={() => openFullscreen(currentImage)}
                 >
                     <Image
                         src={post.images[currentImage]}
                         alt={post.title}
                         fill
-                        className="object-contain"
+                        className="object-cover"
                         sizes="(max-width: 672px) 100vw, 672px"
                         priority
                     />

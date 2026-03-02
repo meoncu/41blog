@@ -108,14 +108,14 @@ export function PostCard({ post, onDeleted }: PostCardProps) {
             {/* Images carousel */}
             {post.images.length > 0 && (
                 <div
-                    className="relative aspect-[4/3] bg-black/40 group/carousel cursor-zoom-in flex items-center justify-center"
+                    className="relative aspect-[4/3] bg-surface-2 group/carousel cursor-zoom-in"
                     onClick={() => openFullscreen(currentImageIndex)}
                 >
                     <Image
                         src={post.images[currentImageIndex]}
                         alt={post.title}
                         fill
-                        className="object-contain"
+                        className="object-cover"
                         sizes="(max-width: 672px) 100vw, 672px"
                         priority={false}
                     />
