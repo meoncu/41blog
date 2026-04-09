@@ -78,21 +78,31 @@ export function PostFeed({ searchQuery }: PostFeedProps) {
                 const q = buildQuery(reset ? undefined : lastDocRef.current ?? undefined);
                 const snap = await getDocs(q);
 
-                const fetched: Post[] = snap.docs.map((d) => ({
-                    id: d.id,
-                    ...(d.data() as Omit<Post, 'id'>),
-                    createdAt:
-                        d.data().createdAt?.toDate?.()?.toISOString() ?? d.data().createdAt,
-                    updatedAt:
-                        d.data().updatedAt?.toDate?.()?.toISOString() ?? d.data().updatedAt,
-                }));
+                const fetched: Post[] = snap.docs.map((d) => {
+                    const data = d.data();
+                    return {
+                        id: d.id,
+                        ...(data as Omit<Post, 'id'>),
+                        title: data.title || '',
+                        content: data.content || '',
+                        images: data.images || [],
+                        likedBy: data.likedBy || [],
+                        likesCount: data.likesCount || 0,
+                        visibility: data.visibility || 'public',
+                        allowedUsers: data.allowedUsers || [],
+                        createdAt:
+                            data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt,
+                        updatedAt:
+                            data.updatedAt?.toDate?.()?.toISOString() ?? data.updatedAt,
+                    };
+                });
 
                 // Client-side search filter
                 const filtered = searchQuery
                     ? fetched.filter(
                         (p) =>
-                            p.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                            p.content.toLowerCase().includes(searchQuery.toLowerCase())
+                            (p.title || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+                            (p.content || '').toLowerCase().includes(searchQuery.toLowerCase())
                     )
                     : fetched;
 

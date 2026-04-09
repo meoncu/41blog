@@ -20,6 +20,13 @@ export default async function EditPostPage({ params }: EditPostPageProps) {
     const post: Post = {
         id: snap.id,
         ...data,
+        title: data.title || '',
+        content: data.content || '',
+        images: data.images || [],
+        likedBy: data.likedBy || [],
+        likesCount: data.likesCount || 0,
+        visibility: data.visibility || 'public',
+        allowedUsers: data.allowedUsers || [],
         createdAt: data.createdAt?.toDate?.()?.toISOString() ?? data.createdAt,
         updatedAt: data.updatedAt?.toDate?.()?.toISOString() ?? data.updatedAt,
     } as Post;
