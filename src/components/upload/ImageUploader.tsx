@@ -320,6 +320,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                                     fill
                                     className="object-cover"
                                     sizes="120px"
+                                    unoptimized
                                 />
                                 {/* Status overlay */}
                                 <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
