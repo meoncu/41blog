@@ -18,6 +18,11 @@ export function PWAInstallPrompt() {
         if (sessionStorage.getItem('pwa-prompt-dismissed')) return;
 
         const handler = (e: Event) => {
+            // We call preventDefault() to suppress the browser's default
+            // mini-infobar and show our own custom install prompt instead.
+            // Chrome logs a "Banner not shown" info message in the console
+            // for any preventDefault() call without an immediate prompt().
+            // This is expected and intentional for our custom UX.
             e.preventDefault();
             setDeferredPrompt(e as BeforeInstallPromptEvent);
             // Show after a short delay for better UX

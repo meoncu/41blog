@@ -42,8 +42,9 @@ firebase-debug.log
 firestore-debug.log
 ui-debug.log
 
-# service worker (generated)
-/public/sw.js
+# service worker
+# Note: /public/sw.js is hand-maintained (see PWA service worker)
+# and should be committed. Workbox artifacts are still auto-generated.
 /public/workbox-*.js
 /public/worker-*.js
 /public/fallback-*.js

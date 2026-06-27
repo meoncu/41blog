@@ -57,8 +57,11 @@ service cloud.firestore {
 
     match /posts/{postId} {
 
-      // Okuma: siteye erişim hakkı olan + post görünürlüğüne göre
-      allow read: if canAccessSite() && (
+      // Okuma:
+      // - Public postlar HER ZAMAN okunabilir (site modundan bağımsız)
+      // - Private postlar: sadece admin veya allowedUsers listesinde olanlar
+      // (Site mode sadece "siteye giriş" kontrolü için kullanılır, post içeriğini etkilemez)
+      allow read: if (
         resource.data.visibility == 'public' ||
         isAdmin() ||
         (isSignedIn() && request.auth.token.email in resource.data.allowedUsers)
