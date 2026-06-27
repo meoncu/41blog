@@ -19,70 +19,126 @@ export interface TextOverlayOptions {
     backgroundColor?: string;
 }
 
-const MAX_WIDTH = 1200;
+const MAX_WIDTH = 1600;
+const MAX_INPUT_BYTES = 30 * 1024 * 1024; // 30 MB hard cap before processing
 const JPEG_QUALITY = 0.78; // ~78% quality – good balance
+
+function formatBytes(bytes: number): string {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function friendlyError(err: unknown): Error {
+    if (err instanceof Error) return err;
+    return new Error(String(err));
+}
 
 /**
  * Compress and resize an image file.
  * Returns a Blob ready for upload.
+ *
+ * Strategy:
+ * 1. Validate file (size, type) up front
+ * 2. Use createImageBitmap with resizeWidth hint → browser decodes at smaller size
+ *    (avoids OOM on huge Android photos that can be 50MP+)
+ * 3. Draw to OffscreenCanvas if available (no main-thread block), else regular canvas
+ * 4. Optional text overlay, then convert to JPEG blob
  */
 export async function compressImage(
     file: File,
     overlay?: TextOverlayOptions
 ): Promise<ProcessedImage> {
-    return new Promise((resolve, reject) => {
-        const img = new Image();
-        const objectUrl = URL.createObjectURL(file);
+    // ── 1. Validate ──────────────────────────────────────────────────────
+    if (!file) {
+        throw new Error('Dosya seçilmedi');
+    }
+    if (!file.type || !file.type.startsWith('image/')) {
+        throw new Error(
+            `Geçersiz dosya tipi: ${file.type || 'bilinmiyor'}. JPEG, PNG veya WebP deneyin.`
+        );
+    }
+    if (file.size > MAX_INPUT_BYTES) {
+        throw new Error(
+            `Resim çok büyük (${formatBytes(file.size)}). Maksimum ${formatBytes(MAX_INPUT_BYTES)}.`
+        );
+    }
 
-        img.onload = () => {
-            URL.revokeObjectURL(objectUrl);
+    // ── 2. Decode + resize in one step via createImageBitmap ─────────────
+    // The browser decodes the image at the target size, avoiding full-resolution
+    // decode that can OOM on Android Chrome with 50MP phone photos.
+    let bitmap: ImageBitmap;
+    try {
+        bitmap = await createImageBitmap(file, {
+            resizeWidth: MAX_WIDTH,
+            resizeQuality: 'medium',
+        });
+    } catch (err) {
+        const e = friendlyError(err);
+        // HEIC files often fail here on browsers without HEIC decoder
+        if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
+            throw new Error(
+                'HEIC formatı desteklenmiyor. Ayarlar → Kamera → Format → "En uyumlu" (JPEG) seçin.'
+            );
+        }
+        throw new Error(
+            `Resim okunamadı (${file.type}, ${formatBytes(file.size)}): ${e.message}`
+        );
+    }
 
-            // Calculate new dimensions
-            let { width, height } = img;
-            if (width > MAX_WIDTH) {
-                height = Math.round((height * MAX_WIDTH) / width);
-                width = MAX_WIDTH;
+    const width = bitmap.width;
+    const height = bitmap.height;
+
+    if (width === 0 || height === 0) {
+        bitmap.close();
+        throw new Error('Resim boyutları geçersiz (0x0)');
+    }
+
+    // ── 3. Draw to canvas + apply overlay + export blob ─────────────────
+    let blob: Blob | null = null;
+    try {
+        if (typeof OffscreenCanvas !== 'undefined') {
+            const canvas = new OffscreenCanvas(width, height);
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('OffscreenCanvas 2D context alınamadı');
+            ctx.drawImage(bitmap, 0, 0);
+            if (overlay?.text) {
+                applyTextOverlay(ctx as unknown as CanvasRenderingContext2D, overlay, width, height);
             }
-
+            blob = await canvas.convertToBlob({ type: 'image/jpeg', quality: JPEG_QUALITY });
+        } else {
             const canvas = document.createElement('canvas');
             canvas.width = width;
             canvas.height = height;
-            const ctx = canvas.getContext('2d')!;
-
-            // Draw image
-            ctx.drawImage(img, 0, 0, width, height);
-
-            // Optional text overlay
+            const ctx = canvas.getContext('2d');
+            if (!ctx) throw new Error('Canvas 2D context alınamadı');
+            ctx.drawImage(bitmap, 0, 0);
             if (overlay?.text) {
                 applyTextOverlay(ctx, overlay, width, height);
             }
+            blob = await new Promise<Blob | null>((resolve) => {
+                canvas.toBlob((b) => resolve(b), 'image/jpeg', JPEG_QUALITY);
+            });
+        }
+    } catch (err) {
+        bitmap.close();
+        const e = friendlyError(err);
+        throw new Error(`Resim işlenemedi: ${e.message}`);
+    } finally {
+        bitmap.close();
+    }
 
-            canvas.toBlob(
-                (blob) => {
-                    if (!blob) {
-                        reject(new Error('Canvas toBlob failed'));
-                        return;
-                    }
-                    resolve({
-                        blob,
-                        width,
-                        height,
-                        originalSize: file.size,
-                        compressedSize: blob.size,
-                    });
-                },
-                'image/jpeg',
-                JPEG_QUALITY
-            );
-        };
+    if (!blob || blob.size === 0) {
+        throw new Error('Resim dönüştürülemedi (blob boş)');
+    }
 
-        img.onerror = () => {
-            URL.revokeObjectURL(objectUrl);
-            reject(new Error('Failed to load image'));
-        };
-
-        img.src = objectUrl;
-    });
+    return {
+        blob,
+        width,
+        height,
+        originalSize: file.size,
+        compressedSize: blob.size,
+    };
 }
 
 function applyTextOverlay(
@@ -133,11 +189,15 @@ function applyTextOverlay(
             break;
     }
 
-    // Background pill
+    // Background pill – use rect with arc if roundRect missing (older WebViews)
     ctx.fillStyle = backgroundColor;
-    ctx.beginPath();
-    ctx.roundRect(x, y, boxW, boxH, 8);
-    ctx.fill();
+    if (typeof (ctx as unknown as { roundRect?: unknown }).roundRect === 'function') {
+        ctx.beginPath();
+        (ctx as unknown as { roundRect: (x: number, y: number, w: number, h: number, r: number) => void }).roundRect(x, y, boxW, boxH, 8);
+        ctx.fill();
+    } else {
+        ctx.fillRect(x, y, boxW, boxH);
+    }
 
     // Text
     ctx.fillStyle = color;
@@ -175,8 +235,4 @@ export function generateFileKey(originalName: string): string {
 /**
  * Format bytes to human-readable string.
  */
-export function formatBytes(bytes: number): string {
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
+export { formatBytes };

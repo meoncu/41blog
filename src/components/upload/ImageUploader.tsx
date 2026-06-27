@@ -336,7 +336,15 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                                         <CheckCircle size={22} className="text-accent-success" />
                                     )}
                                     {f.status === 'error' && (
-                                        <AlertCircle size={22} className="text-accent-like" />
+                                        <div className="absolute inset-0 bg-red-900/80 flex flex-col items-center justify-center p-1.5 text-center">
+                                            <AlertCircle size={18} className="text-white" />
+                                            <span
+                                                className="text-white text-[9px] mt-1 leading-tight line-clamp-4"
+                                                title={f.error}
+                                            >
+                                                {f.error || 'Hata'}
+                                            </span>
+                                        </div>
                                     )}
                                 </div>
                                 {/* Remove button */}
