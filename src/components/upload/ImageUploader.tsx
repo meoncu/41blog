@@ -1,12 +1,10 @@
 'use client';
 
 import { useState, useCallback, useRef } from 'react';
-import Image from 'next/image';
 import { useAuth } from '@/contexts/AuthContext';
 import {
     compressImage,
     getCurrentLocation,
-    generateFileKey,
     formatBytes,
     TextOverlayOptions,
 } from '@/lib/image-processor';
@@ -63,7 +61,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
         const fileInputRef = useRef<HTMLInputElement>(null);
         const cameraInputRef = useRef<HTMLInputElement>(null);
 
-        const addFiles = useCallback((newFiles: FileList) => {
+        const addFiles = useCallback((newFiles: FileList | File[]) => {
             const arr = Array.from(newFiles).slice(0, maxImages - files.length);
             const states: FileState[] = arr.map((file) => ({
                 file,
@@ -76,136 +74,158 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
 
         const removeFile = useCallback((index: number) => {
             setFiles((prev) => {
-                URL.revokeObjectURL(prev[index].preview);
+                const target = prev[index];
+                if (target?.preview) {
+                    try {
+                        URL.revokeObjectURL(target.preview);
+                    } catch {}
+                }
                 return prev.filter((_, i) => i !== index);
             });
         }, []);
 
         const fetchGPS = useCallback(async () => {
             setGpsLoading(true);
-            const coords = await getCurrentLocation();
-            if (coords) {
-                setLocation({
-                    latitude: coords.latitude,
-                    longitude: coords.longitude,
-                    accuracy: coords.accuracy,
-                });
+            try {
+                const coords = await getCurrentLocation();
+                if (coords) {
+                    setLocation({
+                        latitude: coords.latitude,
+                        longitude: coords.longitude,
+                        accuracy: coords.accuracy ?? undefined,
+                    });
+                }
+            } catch (err) {
+                console.warn('GPS extraction failed:', err);
+            } finally {
+                setGpsLoading(false);
             }
-            setGpsLoading(false);
         }, []);
 
         const uploadAll = useCallback(async (): Promise<UploadedImage[]> => {
             if (!user || files.length === 0) return [];
             setUploading(true);
 
-            const idToken = await user.getIdToken();
             const results: UploadedImage[] = [];
 
-            for (let i = 0; i < files.length; i++) {
-                const fileState = files[i];
-                if (fileState.status === 'done' && fileState.result) {
-                    results.push(fileState.result);
-                    continue;
-                }
+            try {
+                const idToken = await user.getIdToken();
 
-                // Step 1: Compress
-                setFiles((prev) =>
-                    prev.map((f, idx) =>
-                        idx === i ? { ...f, status: 'compressing', progress: 10 } : f
-                    )
-                );
-
-                let compressed;
-                try {
-                    compressed = await compressImage(
-                        fileState.file,
-                        overlayText ? { text: overlayText, position: overlayPosition } : undefined
-                    );
-                } catch (err) {
-                    setFiles((prev) =>
-                        prev.map((f, idx) =>
-                            idx === i ? { ...f, status: 'error', error: 'Compression failed' } : f
-                        )
-                    );
-                    continue;
-                }
-
-                setFiles((prev) =>
-                    prev.map((f, idx) =>
-                        idx === i ? { ...f, status: 'uploading', progress: 40 } : f
-                    )
-                );
-
-                // Step 2: Get signed URL
-                let signedData;
-                try {
-                    const res = await fetch('/api/upload/signed-url', {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            Authorization: `Bearer ${idToken}`,
-                        },
-                        body: JSON.stringify({
-                            fileName: fileState.file.name,
-                            contentType: 'image/jpeg',
-                            fileSize: compressed.blob.size,
-                        }),
-                    });
-
-                    if (!res.ok) {
-                        const err = await res.json();
-                        throw new Error(err.error ?? 'Failed to get upload URL');
+                for (let i = 0; i < files.length; i++) {
+                    const fileState = files[i];
+                    if (fileState.status === 'done' && fileState.result) {
+                        results.push(fileState.result);
+                        continue;
                     }
 
-                    signedData = await res.json();
-                } catch (err: any) {
+                    // Step 1: Compress
                     setFiles((prev) =>
                         prev.map((f, idx) =>
-                            idx === i ? { ...f, status: 'error', error: err.message } : f
+                            idx === i ? { ...f, status: 'compressing', progress: 15 } : f
                         )
                     );
-                    continue;
+
+                    let compressed;
+                    try {
+                        compressed = await compressImage(
+                            fileState.file,
+                            overlayText ? { text: overlayText, position: overlayPosition } : undefined
+                        );
+                    } catch (err: any) {
+                        console.error('Compression error:', err);
+                        setFiles((prev) =>
+                            prev.map((f, idx) =>
+                                idx === i ? { ...f, status: 'error', error: err?.message || 'Sıkıştırma başarısız oldu' } : f
+                            )
+                        );
+                        continue;
+                    }
+
+                    setFiles((prev) =>
+                        prev.map((f, idx) =>
+                            idx === i ? { ...f, status: 'uploading', progress: 40 } : f
+                        )
+                    );
+
+                    // Step 2: Get signed URL
+                    let signedData;
+                    try {
+                        const safeFileName = (fileState.file.name || 'image.jpg')
+                            .replace(/[^a-zA-Z0-9.-]/g, '_');
+
+                        const res = await fetch('/api/upload/signed-url', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                Authorization: `Bearer ${idToken}`,
+                            },
+                            body: JSON.stringify({
+                                fileName: safeFileName,
+                                contentType: 'image/jpeg',
+                                fileSize: compressed.blob.size,
+                            }),
+                        });
+
+                        if (!res.ok) {
+                            const errData = await res.json().catch(() => ({}));
+                            throw new Error(errData.error ?? 'Yükleme adresi alınamadı');
+                        }
+
+                        signedData = await res.json();
+                    } catch (err: any) {
+                        console.error('Signed URL error:', err);
+                        setFiles((prev) =>
+                            prev.map((f, idx) =>
+                                idx === i ? { ...f, status: 'error', error: err.message } : f
+                            )
+                        );
+                        continue;
+                    }
+
+                    setFiles((prev) =>
+                        prev.map((f, idx) =>
+                            idx === i ? { ...f, progress: 70 } : f
+                        )
+                    );
+
+                    // Step 3: Upload directly to R2
+                    try {
+                        const uploadRes = await fetch(signedData.uploadUrl, {
+                            method: 'PUT',
+                            headers: { 'Content-Type': 'image/jpeg' },
+                            body: compressed.blob,
+                        });
+
+                        if (!uploadRes.ok) throw new Error('Depolama sunucusuna yükleme başarısız oldu');
+
+                        const result: UploadedImage = {
+                            publicUrl: signedData.publicUrl,
+                            key: signedData.key,
+                            originalSize: compressed.originalSize,
+                            compressedSize: compressed.compressedSize,
+                        };
+
+                        results.push(result);
+                        setFiles((prev) =>
+                            prev.map((f, idx) =>
+                                idx === i ? { ...f, status: 'done', progress: 100, result } : f
+                            )
+                        );
+                    } catch (err: any) {
+                        console.error('R2 upload error:', err);
+                        setFiles((prev) =>
+                            prev.map((f, idx) =>
+                                idx === i ? { ...f, status: 'error', error: err?.message || 'Yükleme başarısız' } : f
+                            )
+                        );
+                    }
                 }
-
-                setFiles((prev) =>
-                    prev.map((f, idx) =>
-                        idx === i ? { ...f, progress: 60 } : f
-                    )
-                );
-
-                // Step 3: Upload directly to R2
-                try {
-                    const uploadRes = await fetch(signedData.uploadUrl, {
-                        method: 'PUT',
-                        headers: { 'Content-Type': 'image/jpeg' },
-                        body: compressed.blob,
-                    });
-
-                    if (!uploadRes.ok) throw new Error('Upload to R2 failed');
-
-                    const result: UploadedImage = {
-                        publicUrl: signedData.publicUrl,
-                        key: signedData.key,
-                        originalSize: compressed.originalSize,
-                        compressedSize: compressed.compressedSize,
-                    };
-
-                    results.push(result);
-                    setFiles((prev) =>
-                        prev.map((f, idx) =>
-                            idx === i ? { ...f, status: 'done', progress: 100, result } : f
-                        )
-                    );
-                } catch (err: any) {
-                    setFiles((prev) =>
-                        prev.map((f, idx) =>
-                            idx === i ? { ...f, status: 'error', error: 'Upload failed' } : f
-                        )
-                    );
-                }
+            } catch (err) {
+                console.error('General upload error:', err);
+            } finally {
+                setUploading(false);
             }
 
-            setUploading(false);
             if (results.length > 0) {
                 onUploaded(results, location ?? undefined);
             }
@@ -233,17 +253,22 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                     <p className="text-sm text-text-secondary mb-1">
                         Görselleri sürükleyip bırakın veya seçmek için tıklayın
                     </p>
-                    <p className="text-xs text-text-muted">JPEG, PNG, WebP · Max 10MB</p>
+                    <p className="text-xs text-text-muted">JPEG, PNG, WebP, HEIC · Max 10MB</p>
                 </div>
 
                 {/* Hidden inputs */}
                 <input
                     ref={fileInputRef}
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,image/heic"
+                    accept="image/*"
                     multiple
                     className="hidden"
-                    onChange={(e) => e.target.files && addFiles(e.target.files)}
+                    onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                            addFiles(e.target.files);
+                        }
+                        e.target.value = '';
+                    }}
                 />
                 <input
                     ref={cameraInputRef}
@@ -251,7 +276,12 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                     accept="image/*"
                     capture="environment"
                     className="hidden"
-                    onChange={(e) => e.target.files && addFiles(e.target.files)}
+                    onChange={(e) => {
+                        if (e.target.files && e.target.files.length > 0) {
+                            addFiles(e.target.files);
+                        }
+                        e.target.value = '';
+                    }}
                 />
 
                 {/* Camera button */}
@@ -261,7 +291,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                     className="w-full flex items-center justify-center gap-2 py-3.5 rounded-xl bg-surface-2 hover:bg-surface-3 text-text-primary hover:text-brand-300 border border-surface-4 transition-all active:scale-[0.98] text-sm font-medium"
                 >
                     <Camera size={20} className="text-brand-400" />
-                    Fotoğraf Çek
+                    Fotoğraf Çek / Kamerayı Aç
                 </button>
 
                 {/* Overlay text */}
@@ -274,7 +304,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                         type="text"
                         value={overlayText}
                         onChange={(e) => setOverlayText(e.target.value)}
-                        placeholder="e.g. Istanbul, Feb 2026"
+                        placeholder="Örn: Istanbul, 2026"
                         className="w-full px-4 py-2.5 rounded-xl bg-surface-2 border border-surface-4 text-text-primary placeholder:text-text-muted text-sm focus:border-brand-500 focus:outline-none transition-colors"
                     />
                     {overlayText && (
@@ -313,46 +343,59 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                 {files.length > 0 && (
                     <div className="grid grid-cols-3 gap-2">
                         {files.map((f, i) => (
-                            <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-surface-2">
-                                <Image
+                            <div key={i} className="relative aspect-square rounded-xl overflow-hidden bg-surface-2 border border-surface-4">
+                                <img
                                     src={f.preview}
                                     alt=""
-                                    fill
-                                    className="object-cover"
-                                    sizes="120px"
-                                    unoptimized
+                                    className="w-full h-full object-cover"
+                                    onError={(e) => {
+                                        // Fallback if browser can't render raw preview
+                                        (e.target as HTMLElement).style.display = 'none';
+                                    }}
                                 />
                                 {/* Status overlay */}
-                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                                <div className="absolute inset-0 bg-black/40 flex items-center justify-center pointer-events-none">
                                     {f.status === 'compressing' && (
-                                        <Loader2 size={20} className="animate-spin text-white" />
+                                        <div className="text-center">
+                                            <Loader2 size={20} className="animate-spin text-white mx-auto" />
+                                            <span className="text-white text-[10px] mt-1 block">İşleniyor</span>
+                                        </div>
                                     )}
                                     {f.status === 'uploading' && (
                                         <div className="text-center">
                                             <Loader2 size={20} className="animate-spin text-white mx-auto" />
-                                            <span className="text-white text-xs mt-1">{f.progress}%</span>
+                                            <span className="text-white text-xs mt-1 block">{f.progress}%</span>
                                         </div>
                                     )}
                                     {f.status === 'done' && (
-                                        <CheckCircle size={22} className="text-accent-success" />
+                                        <CheckCircle size={24} className="text-accent-success" />
                                     )}
                                     {f.status === 'error' && (
-                                        <AlertCircle size={22} className="text-accent-like" />
+                                        <div className="text-center px-1">
+                                            <AlertCircle size={22} className="text-accent-like mx-auto" />
+                                            <span className="text-accent-like text-[9px] mt-0.5 block leading-tight">
+                                                {f.error || 'Hata'}
+                                            </span>
+                                        </div>
                                     )}
                                 </div>
                                 {/* Remove button */}
                                 {f.status !== 'uploading' && (
                                     <button
-                                        onClick={() => removeFile(i)}
-                                        className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/70 flex items-center justify-center"
+                                        type="button"
+                                        onClick={(e) => {
+                                            e.stopPropagation();
+                                            removeFile(i);
+                                        }}
+                                        className="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/80 flex items-center justify-center hover:bg-accent-like transition-colors z-10"
                                     >
-                                        <X size={12} className="text-white" />
+                                        <X size={13} className="text-white" />
                                     </button>
                                 )}
                                 {/* Size info */}
                                 {f.status === 'done' && f.result && (
-                                    <div className="absolute bottom-1 left-1 right-1 text-center">
-                                        <span className="text-[9px] text-white/80 bg-black/50 px-1 rounded">
+                                    <div className="absolute bottom-1 left-1 right-1 text-center pointer-events-none">
+                                        <span className="text-[9px] text-white/90 bg-black/70 px-1 py-0.5 rounded">
                                             {formatBytes(f.result.compressedSize)}
                                         </span>
                                     </div>
@@ -390,4 +433,7 @@ export const ImageUploader = forwardRef<ImageUploaderRef, ImageUploaderProps>(
                 )}
             </div>
         );
-    });
+    }
+);
+ImageUploader.displayName = 'ImageUploader';
+

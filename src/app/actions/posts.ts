@@ -26,6 +26,17 @@ async function getVerifiedUser(idToken: string) {
     }
 }
 
+// ─── Location helper ─────────────────────────────────────────────────────────
+
+function sanitizeLocation(loc?: GpsLocation | null) {
+    if (!loc || typeof loc.latitude !== 'number' || typeof loc.longitude !== 'number') return null;
+    return {
+        latitude: Number(loc.latitude),
+        longitude: Number(loc.longitude),
+        accuracy: typeof loc.accuracy === 'number' ? Number(loc.accuracy) : null,
+    };
+}
+
 // ─── Create Post ──────────────────────────────────────────────────────────────
 
 export async function createPost(
@@ -52,17 +63,17 @@ export async function createPost(
     }
 
     const post = {
-        title: data.title.trim(),
-        content: data.content.trim(),
-        images: data.images,
-        location: data.location ?? null,
+        title: (data.title || '').trim(),
+        content: (data.content || '').trim(),
+        images: Array.isArray(data.images) ? data.images : [],
+        location: sanitizeLocation(data.location),
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         createdBy: decoded.uid,
         createdByEmail: email,
         createdByName: decoded.name ?? email,
-        visibility: data.visibility,
-        allowedUsers: data.allowedUsers,
+        visibility: data.visibility || 'private',
+        allowedUsers: Array.isArray(data.allowedUsers) ? data.allowedUsers : [],
         likesCount: 0,
         likedBy: [],
     };
@@ -82,7 +93,7 @@ export async function updatePost(
         images: string[];
         visibility: PostVisibility;
         allowedUsers: string[];
-        location: GpsLocation;
+        location: GpsLocation | null;
     }>
 ): Promise<void> {
     const decoded = await getVerifiedUser(idToken);
@@ -94,10 +105,18 @@ export async function updatePost(
         if (!userSnap.data()?.canEdit) throw new Error('Forbidden');
     }
 
-    await adminDb.collection('posts').doc(postId).update({
-        ...data,
+    const updateData: Record<string, any> = {
         updatedAt: FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (data.title !== undefined) updateData.title = data.title.trim();
+    if (data.content !== undefined) updateData.content = data.content.trim();
+    if (data.visibility !== undefined) updateData.visibility = data.visibility;
+    if (data.images !== undefined) updateData.images = data.images;
+    if (data.allowedUsers !== undefined) updateData.allowedUsers = data.allowedUsers;
+    if (data.location !== undefined) updateData.location = sanitizeLocation(data.location);
+
+    await adminDb.collection('posts').doc(postId).update(updateData);
 }
 
 // ─── Delete Post ──────────────────────────────────────────────────────────────

@@ -1,6 +1,6 @@
 /**
  * Image processing utilities – browser only.
- * Handles compression, resize, canvas text overlay, and GPS extraction.
+ * Handles compression, resize, canvas text overlay, HEIC conversion, and GPS extraction.
  */
 
 export interface ProcessedImage {
@@ -19,35 +19,90 @@ export interface TextOverlayOptions {
     backgroundColor?: string;
 }
 
-const MAX_WIDTH = 1200;
-const JPEG_QUALITY = 0.78; // ~78% quality – good balance
+const MAX_DIMENSION = 1920; // 1920px max width or height
+const JPEG_QUALITY = 0.80; // 80% quality – optimal balance
+
+/**
+ * Check if a file is HEIC / HEIF format.
+ */
+function isHeicFile(file: File | Blob): boolean {
+    const type = file.type?.toLowerCase() || '';
+    if (type.includes('heic') || type.includes('heif')) return true;
+    if ('name' in file && typeof file.name === 'string') {
+        const ext = file.name.split('.').pop()?.toLowerCase();
+        return ext === 'heic' || ext === 'heif';
+    }
+    return false;
+}
+
+/**
+ * Convert HEIC / HEIF file to a standard JPEG Blob if needed.
+ */
+async function ensureStandardImage(file: File | Blob): Promise<Blob> {
+    if (!isHeicFile(file)) {
+        return file;
+    }
+
+    try {
+        const heic2any = (await import('heic2any')).default;
+        const converted = await heic2any({
+            blob: file,
+            toType: 'image/jpeg',
+            quality: 0.85,
+        });
+
+        if (Array.isArray(converted)) {
+            return converted[0];
+        }
+        return converted;
+    } catch (err) {
+        console.warn('HEIC conversion fallback failed, proceeding with original file:', err);
+        return file;
+    }
+}
 
 /**
  * Compress and resize an image file.
  * Returns a Blob ready for upload.
  */
 export async function compressImage(
-    file: File,
+    file: File | Blob,
     overlay?: TextOverlayOptions
 ): Promise<ProcessedImage> {
+    const standardBlob = await ensureStandardImage(file);
+
     return new Promise((resolve, reject) => {
         const img = new Image();
-        const objectUrl = URL.createObjectURL(file);
+        const objectUrl = URL.createObjectURL(standardBlob);
 
         img.onload = () => {
             URL.revokeObjectURL(objectUrl);
 
-            // Calculate new dimensions
+            // Calculate new dimensions preserving aspect ratio
             let { width, height } = img;
-            if (width > MAX_WIDTH) {
-                height = Math.round((height * MAX_WIDTH) / width);
-                width = MAX_WIDTH;
+            if (width > MAX_DIMENSION || height > MAX_DIMENSION) {
+                if (width > height) {
+                    height = Math.round((height * MAX_DIMENSION) / width);
+                    width = MAX_DIMENSION;
+                } else {
+                    width = Math.round((width * MAX_DIMENSION) / height);
+                    height = MAX_DIMENSION;
+                }
             }
+
+            // Ensure minimum 1px dimension
+            width = Math.max(1, width);
+            height = Math.max(1, height);
 
             const canvas = document.createElement('canvas');
             canvas.width = width;
             canvas.height = height;
-            const ctx = canvas.getContext('2d')!;
+            const ctx = canvas.getContext('2d');
+
+            if (!ctx) {
+                reject(new Error('Canvas 2D context not available'));
+                return;
+            }
 
             // Draw image
             ctx.drawImage(img, 0, 0, width, height);
@@ -78,11 +133,39 @@ export async function compressImage(
 
         img.onerror = () => {
             URL.revokeObjectURL(objectUrl);
-            reject(new Error('Failed to load image'));
+            reject(new Error('Görsel yüklenemedi. Lütfen geçerli bir resim seçin.'));
         };
 
         img.src = objectUrl;
     });
+}
+
+/**
+ * Fallback-safe rounded rectangle drawing for canvas context.
+ */
+function drawRoundedRect(
+    ctx: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    r: number
+): void {
+    if (typeof ctx.roundRect === 'function') {
+        ctx.roundRect(x, y, w, h, r);
+        return;
+    }
+
+    // Polyfill for older mobile browsers
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + w - r, y);
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+    ctx.lineTo(x + w, y + h - r);
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+    ctx.lineTo(x + r, y + h);
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
 }
 
 function applyTextOverlay(
@@ -136,7 +219,7 @@ function applyTextOverlay(
     // Background pill
     ctx.fillStyle = backgroundColor;
     ctx.beginPath();
-    ctx.roundRect(x, y, boxW, boxH, 8);
+    drawRoundedRect(ctx, x, y, boxW, boxH, 8);
     ctx.fill();
 
     // Text
@@ -150,7 +233,7 @@ function applyTextOverlay(
  */
 export function getCurrentLocation(): Promise<GeolocationCoordinates | null> {
     return new Promise((resolve) => {
-        if (!navigator.geolocation) {
+        if (typeof window === 'undefined' || !navigator.geolocation) {
             resolve(null);
             return;
         }
@@ -166,10 +249,11 @@ export function getCurrentLocation(): Promise<GeolocationCoordinates | null> {
  * Generate a unique file key for R2 storage.
  */
 export function generateFileKey(originalName: string): string {
-    const ext = originalName.split('.').pop() ?? 'jpg';
+    const ext = originalName.split('.').pop()?.toLowerCase() ?? 'jpg';
+    const safeExt = ['jpg', 'jpeg', 'png', 'webp'].includes(ext) ? ext : 'jpg';
     const timestamp = Date.now();
     const random = Math.random().toString(36).slice(2, 8);
-    return `posts/${timestamp}-${random}.${ext}`;
+    return `posts/${timestamp}-${random}.${safeExt}`;
 }
 
 /**

@@ -5,16 +5,13 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [
       {
-        // Your R2 public bucket
         protocol: 'https',
-        hostname: 'pub-0ae0b07a370442c6836d4cfc0edfe24a.r2.dev',
+        hostname: '**',
       },
       {
-        protocol: 'https',
-        hostname: 'lh3.googleusercontent.com', // Google profile photos
+        protocol: 'http',
+        hostname: '**',
       },
-      // Add your custom R2 domain here if applicable
-      // { protocol: 'https', hostname: 'images.yourdomain.com' },
     ],
   },
 
