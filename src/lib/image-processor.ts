@@ -20,8 +20,8 @@ export interface TextOverlayOptions {
 }
 
 const MAX_WIDTH = 1600;
-const MAX_INPUT_BYTES = 30 * 1024 * 1024; // 30 MB hard cap before processing
-const JPEG_QUALITY = 0.78; // ~78% quality – good balance
+const MAX_INPUT_BYTES = 30 * 1024 * 1024;
+const JPEG_QUALITY = 0.78;
 
 function formatBytes(bytes: number): string {
     if (bytes < 1024) return `${bytes} B`;
@@ -34,56 +34,27 @@ function friendlyError(err: unknown): Error {
     return new Error(String(err));
 }
 
-/**
- * Compress and resize an image file.
- * Returns a Blob ready for upload.
- *
- * Strategy:
- * 1. Validate file (size, type) up front
- * 2. Use createImageBitmap with resizeWidth hint → browser decodes at smaller size
- *    (avoids OOM on huge Android photos that can be 50MP+)
- * 3. Draw to OffscreenCanvas if available (no main-thread block), else regular canvas
- * 4. Optional text overlay, then convert to JPEG blob
- */
 export async function compressImage(
     file: File,
     overlay?: TextOverlayOptions
 ): Promise<ProcessedImage> {
-    // ── 1. Validate ──────────────────────────────────────────────────────
-    if (!file) {
-        throw new Error('Dosya seçilmedi');
-    }
+    if (!file) throw new Error('Dosya seçilmedi');
     if (!file.type || !file.type.startsWith('image/')) {
-        throw new Error(
-            `Geçersiz dosya tipi: ${file.type || 'bilinmiyor'}. JPEG, PNG veya WebP deneyin.`
-        );
+        throw new Error(`Geçersiz dosya tipi: ${file.type || 'bilinmiyor'}. JPEG, PNG veya WebP deneyin.`);
     }
     if (file.size > MAX_INPUT_BYTES) {
-        throw new Error(
-            `Resim çok büyük (${formatBytes(file.size)}). Maksimum ${formatBytes(MAX_INPUT_BYTES)}.`
-        );
+        throw new Error(`Resim çok büyük (${formatBytes(file.size)}). Maksimum ${formatBytes(MAX_INPUT_BYTES)}.`);
     }
 
-    // ── 2. Decode + resize in one step via createImageBitmap ─────────────
-    // The browser decodes the image at the target size, avoiding full-resolution
-    // decode that can OOM on Android Chrome with 50MP phone photos.
     let bitmap: ImageBitmap;
     try {
-        bitmap = await createImageBitmap(file, {
-            resizeWidth: MAX_WIDTH,
-            resizeQuality: 'medium',
-        });
+        bitmap = await createImageBitmap(file, { resizeWidth: MAX_WIDTH, resizeQuality: 'medium' });
     } catch (err) {
         const e = friendlyError(err);
-        // HEIC files often fail here on browsers without HEIC decoder
         if (file.name.toLowerCase().endsWith('.heic') || file.type === 'image/heic') {
-            throw new Error(
-                'HEIC formatı desteklenmiyor. Ayarlar → Kamera → Format → "En uyumlu" (JPEG) seçin.'
-            );
+            throw new Error('HEIC formatı desteklenmiyor. Ayarlar → Kamera → Format → "En uyumlu" (JPEG) seçin.');
         }
-        throw new Error(
-            `Resim okunamadı (${file.type}, ${formatBytes(file.size)}): ${e.message}`
-        );
+        throw new Error(`Resim okunamadı (${file.type}, ${formatBytes(file.size)}): ${e.message}`);
     }
 
     const width = bitmap.width;
@@ -94,7 +65,6 @@ export async function compressImage(
         throw new Error('Resim boyutları geçersiz (0x0)');
     }
 
-    // ── 3. Draw to canvas + apply overlay + export blob ─────────────────
     let blob: Blob | null = null;
     try {
         if (typeof OffscreenCanvas !== 'undefined') {
@@ -113,48 +83,25 @@ export async function compressImage(
             const ctx = canvas.getContext('2d');
             if (!ctx) throw new Error('Canvas 2D context alınamadı');
             ctx.drawImage(bitmap, 0, 0);
-            if (overlay?.text) {
-                applyTextOverlay(ctx, overlay, width, height);
-            }
+            if (overlay?.text) applyTextOverlay(ctx, overlay, width, height);
             blob = await new Promise<Blob | null>((resolve) => {
                 canvas.toBlob((b) => resolve(b), 'image/jpeg', JPEG_QUALITY);
             });
         }
     } catch (err) {
-        bitmap.close();
         const e = friendlyError(err);
         throw new Error(`Resim işlenemedi: ${e.message}`);
     } finally {
         bitmap.close();
     }
 
-    if (!blob || blob.size === 0) {
-        throw new Error('Resim dönüştürülemedi (blob boş)');
-    }
+    if (!blob || blob.size === 0) throw new Error('Resim dönüştürülemedi (blob boş)');
 
-    return {
-        blob,
-        width,
-        height,
-        originalSize: file.size,
-        compressedSize: blob.size,
-    };
+    return { blob, width, height, originalSize: file.size, compressedSize: blob.size };
 }
 
-function applyTextOverlay(
-    ctx: CanvasRenderingContext2D,
-    options: TextOverlayOptions,
-    width: number,
-    height: number
-): void {
-    const {
-        text,
-        position = 'bottom-right',
-        fontSize = 28,
-        color = '#ffffff',
-        backgroundColor = 'rgba(0,0,0,0.55)',
-    } = options;
-
+function applyTextOverlay(ctx: CanvasRenderingContext2D, options: TextOverlayOptions, width: number, height: number): void {
+    const { text, position = 'bottom-right', fontSize = 28, color = '#ffffff', backgroundColor = 'rgba(0,0,0,0.55)' } = options;
     ctx.font = `bold ${fontSize}px Inter, sans-serif`;
     const metrics = ctx.measureText(text);
     const textWidth = metrics.width;
@@ -162,34 +109,17 @@ function applyTextOverlay(
     const padding = 12;
     const boxW = textWidth + padding * 2;
     const boxH = textHeight + padding * 2;
-
     let x = 0;
     let y = 0;
 
     switch (position) {
-        case 'top-left':
-            x = 16;
-            y = 16;
-            break;
-        case 'top-right':
-            x = width - boxW - 16;
-            y = 16;
-            break;
-        case 'bottom-left':
-            x = 16;
-            y = height - boxH - 16;
-            break;
-        case 'bottom-right':
-            x = width - boxW - 16;
-            y = height - boxH - 16;
-            break;
-        case 'center':
-            x = (width - boxW) / 2;
-            y = (height - boxH) / 2;
-            break;
+        case 'top-left': x = 16; y = 16; break;
+        case 'top-right': x = width - boxW - 16; y = 16; break;
+        case 'bottom-left': x = 16; y = height - boxH - 16; break;
+        case 'bottom-right': x = width - boxW - 16; y = height - boxH - 16; break;
+        case 'center': x = (width - boxW) / 2; y = (height - boxH) / 2; break;
     }
 
-    // Background pill – use rect with arc if roundRect missing (older WebViews)
     ctx.fillStyle = backgroundColor;
     if (typeof (ctx as unknown as { roundRect?: unknown }).roundRect === 'function') {
         ctx.beginPath();
@@ -198,22 +128,13 @@ function applyTextOverlay(
     } else {
         ctx.fillRect(x, y, boxW, boxH);
     }
-
-    // Text
     ctx.fillStyle = color;
     ctx.fillText(text, x + padding, y + padding + textHeight - 4);
 }
 
-/**
- * Extract GPS coordinates from browser Geolocation API.
- * Returns null if permission denied or unavailable.
- */
 export function getCurrentLocation(): Promise<GeolocationCoordinates | null> {
     return new Promise((resolve) => {
-        if (!navigator.geolocation) {
-            resolve(null);
-            return;
-        }
+        if (!navigator.geolocation) return resolve(null);
         navigator.geolocation.getCurrentPosition(
             (pos) => resolve(pos.coords),
             () => resolve(null),
@@ -222,17 +143,9 @@ export function getCurrentLocation(): Promise<GeolocationCoordinates | null> {
     });
 }
 
-/**
- * Generate a unique file key for R2 storage.
- */
 export function generateFileKey(originalName: string): string {
     const ext = originalName.split('.').pop() ?? 'jpg';
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).slice(2, 8);
-    return `posts/${timestamp}-${random}.${ext}`;
+    return `posts/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
 }
 
-/**
- * Format bytes to human-readable string.
- */
 export { formatBytes };
