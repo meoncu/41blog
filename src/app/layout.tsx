@@ -52,7 +52,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" className={inter.variable}>
+    <html lang="tr" translate="no" className={inter.variable}>
       <body className="antialiased">
         <AuthProvider>
           <Navbar />
