@@ -5,6 +5,7 @@ import { AuthProvider } from '@/contexts/AuthContext';
 import { Navbar } from '@/components/layout/Navbar';
 import { PWAInstallPrompt } from '@/components/pwa/PWAInstallPrompt';
 import { ServiceWorkerRegistrar } from '@/components/pwa/ServiceWorkerRegistrar';
+import { DomMutationGuard } from '@/components/pwa/DomMutationGuard';
 
 const inter = Inter({
   subsets: ['latin'],
@@ -20,6 +21,9 @@ export const metadata: Metadata = {
   description:
     'A private, mobile-first blog for sharing moments, photos, and stories with your community.',
   manifest: '/manifest.json',
+  other: {
+    google: 'notranslate',
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',
@@ -54,6 +58,7 @@ export default function RootLayout({
   return (
     <html lang="tr" translate="no" className={inter.variable}>
       <body className="antialiased">
+        <DomMutationGuard />
         <AuthProvider>
           <Navbar />
           <main className="pt-16 pb-20 min-h-dvh">{children}</main>
